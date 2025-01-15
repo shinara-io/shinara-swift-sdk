@@ -48,7 +48,7 @@ ShinaraSDK.instance.validateReferralCode(code: referralCode) { result in
 To attribute a purchase. Recommended to call this after successful in app purchase. Shinara will handle logic to only attribute purchase coming from a referral code
 
 ```swift
-ShinaraSDK.instance.handlePurchase(productId: transaction.payment.productIdentifier, transactionId: transaction.transactionIdentifier ?? "") { result in
+ShinaraSDK.instance.attributePurchase(productId: transaction.payment.productIdentifier, transactionId: transaction.transactionIdentifier ?? "") { result in
     switch result {
     case .success(_):
         // handle success

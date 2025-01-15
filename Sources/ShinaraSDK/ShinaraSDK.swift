@@ -47,6 +47,7 @@ public class ShinaraSDK: NSObject, @unchecked Sendable {
     private let referralCodeKey = "SHINARA_SDK_REFERRAL_CODE"
     private let userExternalIdKey = "SHINARA_SDK_EXTERNAL_USER_ID"
     private let autoGenUserExternalIdKey = "SHINARA_SDK_AUTO_GEN_EXTERNAL_USER_ID"
+    private let processedTransactionsKey = "SHINARA_SDK_PROCESSED_TRANSACTIONS"
     private let apiHeaderKey = "X-API-Key"
     
     // Serial queue for thread-safe access to shared resources
@@ -259,7 +260,7 @@ public class ShinaraSDK: NSObject, @unchecked Sendable {
         }
     }
     
-    public func handlePurchase(productId: String, transactionId: String, completion: @escaping @Sendable (Result<Void, Error>) -> Void) {
+    public func attributePurchase(productId: String, transactionId: String, completion: @escaping @Sendable (Result<Void, Error>) -> Void) {
         queue.async { [weak self] in
             guard let self = self else { return }
             guard let apiKey = self.apiKey else {
@@ -270,6 +271,16 @@ public class ShinaraSDK: NSObject, @unchecked Sendable {
             }
             
             guard let referralCode = UserDefaults.standard.string(forKey: self.referralCodeKey) else {
+                DispatchQueue.main.async {
+                    completion(.success(()))
+                }
+                return
+            }
+
+            // Check if the transaction ID is already processed
+            var processedTransactions = UserDefaults.standard.array(forKey:  self.processedTransactionsKey) as? [String] ?? []
+            if processedTransactions.contains(transactionId) {
+                // Skip processing if the transaction ID is already handled
                 DispatchQueue.main.async {
                     completion(.success(()))
                 }
@@ -303,6 +314,11 @@ public class ShinaraSDK: NSObject, @unchecked Sendable {
                 DispatchQueue.main.async {
                     if let statusCode = response.response?.statusCode {
                         if statusCode == 200 {
+                            // Add transaction ID to the processed list
+                            self.queue.async {
+                                processedTransactions.append(transactionId)
+                                UserDefaults.standard.set(processedTransactions, forKey: self.processedTransactionsKey)
+                            }
                             completion(.success(()))
                         } else {
                             let error = NSError(
