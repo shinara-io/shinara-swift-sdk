@@ -39,7 +39,7 @@ struct UserRegistrationRequest: Codable {
     }
 }
 
-public class ShinaraSDK: NSObject, @unchecked Sendable {
+public actor ShinaraSDK {
     public static let instance = ShinaraSDK()
     private var apiKey: String?
     private var baseURL: String = "https://sdk-gateway-b85kv8d1.ue.gateway.dev"
@@ -48,300 +48,177 @@ public class ShinaraSDK: NSObject, @unchecked Sendable {
     private let userExternalIdKey = "SHINARA_SDK_EXTERNAL_USER_ID"
     private let autoGenUserExternalIdKey = "SHINARA_SDK_AUTO_GEN_EXTERNAL_USER_ID"
     private let processedTransactionsKey = "SHINARA_SDK_PROCESSED_TRANSACTIONS"
+    private let registeredUsersKey = "SHINARA_SDK_REGISTERED_USERS"
     private let apiHeaderKey = "X-API-Key"
     
-    // Serial queue for thread-safe access to shared resources
-    private let queue = DispatchQueue(label: "io.shinara.sdk.queue")
-
-    private override init() {
-        super.init()
-    }
-
-    public func initialize(apiKey: String) {
-        queue.async { [weak self] in
-            self?.apiKey = apiKey
-            self?.validateAPIKey { result in
-                switch result {
-                case .success:
-                    print("Shinara SDK Initialized")
-                case .failure(let error):
-                    print("Failed to Initialize Shinara SDK: \(error.localizedDescription)")
-                }
-            }
-        }
+    private init() {}
+    
+    public func initialize(apiKey: String) async throws {
+        self.apiKey = apiKey
+        try await validateAPIKey()
+        print("Shinara SDK Initialized")
     }
     
-    private func validateAPIKey(completion: @escaping @Sendable (Result<Void, Error>) -> Void) {
+    private func validateAPIKey() async throws {
         guard let apiKey = apiKey else {
-            DispatchQueue.main.async {
-                completion(.failure(NSError(domain: "ShinaraSDK", code: 400, userInfo: [NSLocalizedDescriptionKey: "API Key is not set"])))
-            }
-            return
+            throw NSError(domain: "ShinaraSDK", code: 400, userInfo: [NSLocalizedDescriptionKey: "API Key is not set"])
         }
 
         let headers: HTTPHeaders = [apiHeaderKey: apiKey]
-        AF.request("\(baseURL)/api/key/validate", headers: headers).response { response in
-            DispatchQueue.main.async {
-                if let statusCode = response.response?.statusCode {
-                    if statusCode == 200 {
-                        completion(.success(()))
-                    } else {
-                        let error = NSError(
-                            domain: "ShinaraSDK",
-                            code: statusCode,
-                            userInfo: [NSLocalizedDescriptionKey: "API Key validation failed"]
-                        )
-                        completion(.failure(error))
-                    }
-                } else if let error = response.error {
-                    completion(.failure(error))
-                } else {
-                    completion(.failure(NSError(
-                        domain: "ShinaraSDK",
-                        code: -1,
-                        userInfo: [NSLocalizedDescriptionKey: "Unknown error occurred"]
-                    )))
-                }
+        let response = await AF.request("\(baseURL)/api/key/validate", headers: headers).serializingData().response
+
+        guard let statusCode = response.response?.statusCode else {
+            throw NSError(domain: "ShinaraSDK", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unknown error occurred"])
+        }
+
+        if statusCode == 200 {
+            return // Success!
+        } else {
+            throw NSError(domain: "ShinaraSDK", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "API Key validation failed"])
+        }
+    }
+    
+    public func validateReferralCode(code: String) async throws -> String {
+        guard let apiKey = apiKey else {
+            throw NSError(domain: "ShinaraSDK", code: 400, userInfo: [NSLocalizedDescriptionKey: "API Key is not set"])
+        }
+
+        let parameters = ["code": code]
+        let headers: HTTPHeaders = [self.apiHeaderKey: apiKey]
+
+        let response = await AF.request(
+            "\(self.baseURL)/api/code/validate",
+            method: .post,
+            parameters: parameters,
+            encoder: JSONParameterEncoder.default,
+            headers: headers
+        ).serializingData().response
+
+        guard let statusCode = response.response?.statusCode else {
+            throw NSError(domain: "ShinaraSDK", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unknown error occurred"])
+        }
+
+        if statusCode == 200, let data = response.data {
+            let validationResponse = try JSONDecoder().decode(ValidationResponse.self, from: data)
+            if let programId = validationResponse.programId, !programId.isEmpty {
+                UserDefaults.standard.set(code, forKey: self.referralCodeKey)
+                return programId
+            } else {
+                throw NSError(domain: "ShinaraSDK", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Referral code validation failed"])
             }
+        } else {
+            throw NSError(domain: "ShinaraSDK", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Referral code validation failed"])
         }
     }
 
-    public func validateReferralCode(code: String, completion: @escaping @Sendable (Result<String, Error>) -> Void) {
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            guard let apiKey = self.apiKey else {
-                DispatchQueue.main.async {
-                    completion(.failure(NSError(domain: "ShinaraSDK", code: 400, userInfo: [NSLocalizedDescriptionKey: "Shinara SDK API Key is not set."])))
-                }
-                return
-            }
-
-            let parameters = ["code": code]
-            let headers: HTTPHeaders = [self.apiHeaderKey: apiKey]
-
-            AF.request(
-                "\(self.baseURL)/api/code/validate",
-                method: .post,
-                parameters: parameters,
-                encoder: JSONParameterEncoder.default,
-                headers: headers
-            ).response { response in
-                DispatchQueue.main.async {
-                    if let statusCode = response.response?.statusCode {
-                        if statusCode == 200 {
-                            if let data = response.data {
-                                do {
-                                    let validationResponse = try JSONDecoder().decode(ValidationResponse.self, from: data)
-                                    UserDefaults.standard.set(code, forKey: self.referralCodeKey)
-                                    if validationResponse.programId == nil || validationResponse.programId?.isEmpty ?? false {
-                                        let error = NSError(
-                                            domain: "ShinaraSDK",
-                                            code: statusCode,
-                                            userInfo: [NSLocalizedDescriptionKey: "Referral code validation failed"]
-                                        )
-                                        completion(.failure(error))
-                                    } else {
-                                        completion(.success(validationResponse.programId ?? ""))
-                                    }
-                                } catch {
-                                    completion(.failure(NSError(
-                                        domain: "ShinaraSDK",
-                                        code: -1,
-                                        userInfo: [NSLocalizedDescriptionKey: "Unknown error occurred"]
-                                    )))
-                                }
-                            } else {
-                                completion(.failure(NSError(
-                                    domain: "ShinaraSDK",
-                                    code: -1,
-                                    userInfo: [NSLocalizedDescriptionKey: "Unknown error occurred"]
-                                )))
-                            }
-                        } else {
-                            let error = NSError(
-                                domain: "ShinaraSDK",
-                                code: statusCode,
-                                userInfo: [NSLocalizedDescriptionKey: "Referral code validation failed"]
-                            )
-                            completion(.failure(error))
-                        }
-                    } else if let error = response.error {
-                        completion(.failure(error))
-                    } else {
-                        completion(.failure(NSError(
-                            domain: "ShinaraSDK",
-                            code: -1,
-                            userInfo: [NSLocalizedDescriptionKey: "Unknown error occurred"]
-                        )))
-                    }
-                }
-            }
-        }
-    }
     
     public func getReferralCode() -> String? {
-        queue.sync {
-            return UserDefaults.standard.string(forKey: referralCodeKey)
-        }
+        UserDefaults.standard.string(forKey: referralCodeKey)
     }
-
-    public func registerUser(userId: String, email: String?, name: String?, phone: String?, completion: @escaping @Sendable (Result<Void, Error>) -> Void) {
-            queue.async { [weak self] in
-                guard let self = self else { return }
-                guard let apiKey = self.apiKey else {
-                    DispatchQueue.main.async {
-                        completion(.failure(NSError(domain: "ShinaraSDK", code: 400, userInfo: [NSLocalizedDescriptionKey: "API Key is not set."])))
-                    }
-                    return
-                }
-                
-                guard let referralCode = UserDefaults.standard.string(forKey: self.referralCodeKey) else {
-                    DispatchQueue.main.async {
-                        completion(.failure(NSError(domain: "ShinaraSDK", code: 400, userInfo: [NSLocalizedDescriptionKey: "No stored referral code found. Please save a referral code before registering a user."])))
-                    }
-                    return
-                }
-
-                let headers: HTTPHeaders = [self.apiHeaderKey: apiKey]
-                                
-                let conversionUser = ConversionUser(
-                    externalUserId: userId,
-                    name: name,
-                    email: email,
-                    phone: phone,
-                    autoGeneratedExternalUserId: UserDefaults.standard.string(forKey: self.autoGenUserExternalIdKey)
-                )
-                
-                let request = UserRegistrationRequest(
-                    code: referralCode,
-                    platform: "",
-                    conversionUser: conversionUser
-                )
-
-                AF.request(
-                    "\(self.baseURL)/newuser",
-                    method: .post,
-                    parameters: request,
-                    encoder: JSONParameterEncoder.default,
-                    headers: headers
-                ).response { response in
-                    DispatchQueue.main.async {
-                        if let statusCode = response.response?.statusCode {
-                            if statusCode == 200 {
-                                UserDefaults.standard.set(userId, forKey: self.userExternalIdKey)
-                                // remove auto-generated external user ID now that we have a real one
-                                UserDefaults.standard.removeObject(forKey: self.autoGenUserExternalIdKey)
-                                completion(.success(()))
-                            } else {
-                                let error = NSError(
-                                    domain: "ShinaraSDK",
-                                    code: statusCode,
-                                    userInfo: [NSLocalizedDescriptionKey: "User registration failed"]
-                                )
-                                completion(.failure(error))
-                            }
-                        } else if let error = response.error {
-                            completion(.failure(error))
-                        } else {
-                            completion(.failure(NSError(
-                                domain: "ShinaraSDK",
-                                code: -1,
-                                userInfo: [NSLocalizedDescriptionKey: "Unknown error occurred"]
-                            )))
-                        }
-                    }
-                }
-            }
-        }
     
-    public func getUserId() -> String? {
-        queue.sync {
-            return UserDefaults.standard.string(forKey: userExternalIdKey)
+    public func registerUser(userId: String, email: String?, name: String?, phone: String?) async throws {
+        guard let apiKey = apiKey else {
+            throw NSError(domain: "ShinaraSDK", code: 400, userInfo: [NSLocalizedDescriptionKey: "API Key is not set"])
+        }
+
+        guard let referralCode = UserDefaults.standard.string(forKey: self.referralCodeKey) else {
+            throw NSError(domain: "ShinaraSDK", code: 400, userInfo: [NSLocalizedDescriptionKey: "No stored referral code found. Please save a referral code before registering a user."])
+        }
+        
+        var registeredUsers = UserDefaults.standard.array(forKey: self.registeredUsersKey) as? [String] ?? []
+        if registeredUsers.contains(userId) {
+            return // Skip if already registered
+        }
+
+        let headers: HTTPHeaders = [self.apiHeaderKey: apiKey]
+        let conversionUser = ConversionUser(
+            externalUserId: userId,
+            name: name,
+            email: email,
+            phone: phone,
+            autoGeneratedExternalUserId: UserDefaults.standard.string(forKey: self.autoGenUserExternalIdKey)
+        )
+
+        let request = UserRegistrationRequest(
+            code: referralCode,
+            platform: "",
+            conversionUser: conversionUser
+        )
+
+        let response = await AF.request(
+            "\(self.baseURL)/newuser",
+            method: .post,
+            parameters: request,
+            encoder: JSONParameterEncoder.default,
+            headers: headers
+        ).serializingData().response
+
+        guard let statusCode = response.response?.statusCode else {
+            throw NSError(domain: "ShinaraSDK", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unknown error occurred"])
+        }
+
+        if statusCode == 200 {
+            UserDefaults.standard.set(userId, forKey: self.userExternalIdKey)
+            UserDefaults.standard.removeObject(forKey: self.autoGenUserExternalIdKey)
+            registeredUsers.append(userId)
+            UserDefaults.standard.set(registeredUsers, forKey: self.registeredUsersKey)
+        } else {
+            throw NSError(domain: "ShinaraSDK", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "User registration failed"])
         }
     }
     
-    public func attributePurchase(productId: String, transactionId: String, completion: @escaping @Sendable (Result<Void, Error>) -> Void) {
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            guard let apiKey = self.apiKey else {
-                DispatchQueue.main.async {
-                    completion(.failure(NSError(domain: "ShinaraSDK", code: 400, userInfo: [NSLocalizedDescriptionKey: "API Key is not set."])))
-                }
-                return
-            }
-            
-            guard let referralCode = UserDefaults.standard.string(forKey: self.referralCodeKey) else {
-                DispatchQueue.main.async {
-                    completion(.success(()))
-                }
-                return
-            }
-
-            // Check if the transaction ID is already processed
-            var processedTransactions = UserDefaults.standard.array(forKey:  self.processedTransactionsKey) as? [String] ?? []
-            if processedTransactions.contains(transactionId) {
-                // Skip processing if the transaction ID is already handled
-                DispatchQueue.main.async {
-                    completion(.success(()))
-                }
-                return
-            }
-
-            let headers: HTTPHeaders = [self.apiHeaderKey: apiKey]
-            
-            var parameters: [String: String] = [
-                "product_id": productId,
-                "transaction_id": transactionId,
-                "code": referralCode,
-                "platform": ""
-            ]
-            
-            if let externalUserId = UserDefaults.standard.string(forKey: self.userExternalIdKey) {
-                parameters["external_user_id"] = externalUserId
-            } else {
-                let autoSDKGenExternalUserId: String = UUID().uuidString
-                UserDefaults.standard.set(autoSDKGenExternalUserId, forKey: self.autoGenUserExternalIdKey)
-                parameters["auto_generated_external_user_id"] = autoSDKGenExternalUserId
-            }
-
-            AF.request(
-                "\(self.baseURL)/iappurchase",
-                method: .post,
-                parameters: parameters,
-                encoding: JSONEncoding.default,
-                headers: headers
-            ).response { response in
-                DispatchQueue.main.async {
-                    if let statusCode = response.response?.statusCode {
-                        if statusCode == 200 {
-                            // Add transaction ID to the processed list
-                            self.queue.async {
-                                processedTransactions.append(transactionId)
-                                UserDefaults.standard.set(processedTransactions, forKey: self.processedTransactionsKey)
-                            }
-                            completion(.success(()))
-                        } else {
-                            let error = NSError(
-                                domain: "ShinaraSDK",
-                                code: statusCode,
-                                userInfo: [NSLocalizedDescriptionKey: "Purchase attribution failed"]
-                            )
-                            completion(.failure(error))
-                        }
-                    } else if let error = response.error {
-                        completion(.failure(error))
-                    } else {
-                        completion(.failure(NSError(
-                            domain: "ShinaraSDK",
-                            code: -1,
-                            userInfo: [NSLocalizedDescriptionKey: "Unknown error occurred"]
-                        )))
-                    }
-                }
-            }
-        }
+    public func getUserId() -> String? {
+        UserDefaults.standard.string(forKey: userExternalIdKey)
     }
+    
+    public func attributePurchase(productId: String, transactionId: String) async throws {
+        guard let apiKey = apiKey else {
+            throw NSError(domain: "ShinaraSDK", code: 400, userInfo: [NSLocalizedDescriptionKey: "API Key is not set"])
+        }
 
-    deinit {
+        guard let referralCode = UserDefaults.standard.string(forKey: self.referralCodeKey) else {
+            // If no referral code, we can still proceed without sending a purchase attribution.
+            return
+        }
+
+        var processedTransactions = UserDefaults.standard.array(forKey: self.processedTransactionsKey) as? [String] ?? []
+        if processedTransactions.contains(transactionId) {
+            return // Skip if already processed
+        }
+
+        let headers: HTTPHeaders = [self.apiHeaderKey: apiKey]
+        var parameters: [String: String] = [
+            "product_id": productId,
+            "transaction_id": transactionId,
+            "code": referralCode,
+            "platform": ""
+        ]
+
+        if let externalUserId = UserDefaults.standard.string(forKey: self.userExternalIdKey) {
+            parameters["external_user_id"] = externalUserId
+        } else {
+            let autoSDKGenExternalUserId: String = UUID().uuidString
+            UserDefaults.standard.set(autoSDKGenExternalUserId, forKey: self.autoGenUserExternalIdKey)
+            parameters["auto_generated_external_user_id"] = autoSDKGenExternalUserId
+        }
+
+        let response = await AF.request(
+            "\(self.baseURL)/iappurchase",
+            method: .post,
+            parameters: parameters,
+            encoding: JSONEncoding.default,
+            headers: headers
+        ).serializingData().response
+
+        guard let statusCode = response.response?.statusCode else {
+            throw NSError(domain: "ShinaraSDK", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unknown error occurred"])
+        }
+
+        if statusCode == 200 {
+            processedTransactions.append(transactionId)
+            UserDefaults.standard.set(processedTransactions, forKey: self.processedTransactionsKey)
+        } else {
+            throw NSError(domain: "ShinaraSDK", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Purchase attribution failed"])
+        }
     }
 }
