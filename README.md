@@ -8,7 +8,7 @@ This SDK provides a simple interface for integrating [Shinara](https://shinara.i
 
 ```
 dependencies: [
-    .package(url: "https://github.com/shinara-io/shinara-swift-sdk.git", from: "1.0.0")
+    .package(url: "https://github.com/shinara-io/shinara-swift-sdk.git", from: "1.0.1")
 ]
 ```
 
@@ -37,6 +37,20 @@ Note: Call `validateReferralCode` before In App Purchase for successful Attribut
 ShinaraSDK.instance.validateReferralCode(code: referralCode) { result in
     switch result {
     case .success(let programId):
+        // handle success
+    case .failure(let error):
+        // handle error
+    }
+}
+```
+
+### Attribute Purchase
+To attribute a purchase. Recommended to call this after successful in app purchase. Shinara will handle logic to only attribute purchase coming from a referral code
+
+```swift
+ShinaraSDK.instance.handlePurchase(productId: transaction.payment.productIdentifier, transactionId: transaction.transactionIdentifier ?? "") { result in
+    switch result {
+    case .success(_):
         // handle success
     case .failure(let error):
         // handle error
