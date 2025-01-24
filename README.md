@@ -44,7 +44,6 @@ try await ShinaraSDKTest.instance.attributePurchase(productId: transaction.payme
 
 ### Register a user (Optional)
 By default, Shinara creates a new random userId and assign it to a conversion. Use `registerUser` if you want to use your own internal user id.
-Note: Call `registerUser` before In App Purchase for successful Attribution linking of Purchase with your internal user id.
 
 ```swift
 try await ShinaraSDKTest.instance.registerUser(userId: "INTERNAL_USER_ID", email: nil, name: nil, phone: nil)
