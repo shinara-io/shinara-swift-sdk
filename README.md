@@ -8,7 +8,7 @@ This SDK provides a simple interface for integrating [Shinara](https://shinara.i
 
 ```
 dependencies: [
-    .package(url: "https://github.com/shinara-io/shinara-swift-sdk.git", from: "1.0.5")
+    .package(url: "https://github.com/shinara-io/shinara-swift-sdk.git", from: "1.0.6")
 ]
 ```
 

@@ -398,7 +398,7 @@ public actor ShinaraSDK {
             let osVersion = "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
                 
             // Get Language
-            let language = Locale.current.language.languageCode?.identifier
+            let language = Locale.current.languageCode
                 
             // Get Timezone
             let timezone = TimeZone.current.identifier
