@@ -14,9 +14,9 @@ struct KeyValidationResponse: Codable {
 }
 
 public struct ValidationResponse: Codable {
-    let programId: String?
-    let codeId: String?
-    let brandCodeData: BrandCodeData?
+    public let programId: String?
+    public let codeId: String?
+    public let brandCodeData: BrandCodeData?
     
     enum CodingKeys: String, CodingKey {
         case programId = "campaign_id"
@@ -25,10 +25,10 @@ public struct ValidationResponse: Codable {
     }
 }
 
-struct BrandCodeData: Codable {
-    let codeId: String
-    let isFree: Bool
-    let placementId: String?
+public struct BrandCodeData: Codable {
+    public let codeId: String
+    public let isFree: Bool
+    public let placementId: String?
     
     enum CodingKeys: String, CodingKey {
         case codeId = "code_id"
