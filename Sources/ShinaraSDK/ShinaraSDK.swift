@@ -16,24 +16,24 @@ struct KeyValidationResponse: Codable {
 public struct ValidationResponse: Codable {
     public let programId: String?
     public let codeId: String?
+    public let isFree: Bool?
+    public let placementId: String?
     public let brandCodeData: BrandCodeData?
     
     enum CodingKeys: String, CodingKey {
         case programId = "campaign_id"
         case codeId = "affiliate_code_id"
+        case isFree = "is_free"
+        case placementId = "placement_id"
         case brandCodeData = "brand_code_data"
     }
 }
 
 public struct BrandCodeData: Codable {
     public let codeId: String
-    public let isFree: Bool
-    public let placementId: String?
     
     enum CodingKeys: String, CodingKey {
         case codeId = "code_id"
-        case isFree = "is_free"
-        case placementId = "placement_id"
     }
 }
 
@@ -97,10 +97,11 @@ public actor ShinaraSDK {
     private let programIdKey = "SHINARA_SDK_PROGRAM_ID"
     private let referralCodeIdKey = "SHINARA_SDK_REFERRAL_CODE_ID"
     
+    private let referralCodeIsFreeKey = "SHINARA_SDK_REFERRAL_CODE_IS_FREE"
+    private let referralCodePlacementIdKey = "SHINARA_SDK_REFERRAL_CODE_PLACEMENT_ID"
+    
     // brand code keys
     private let referralBrandCodeIdKey = "SHINARA_SDK_REFERRAL_BRAND_CODE_ID"
-    private let referralBrandCodeIsFreeKey = "SHINARA_SDK_REFERRAL_BRAND_CODE_IS_FREE"
-    private let referralBrandCodePlacementIdKey = "SHINARA_SDK_REFERRAL_BRAND_CODE_PLACEMENT_ID"
     
     private let userExternalIdKey = "SHINARA_SDK_EXTERNAL_USER_ID"
     private let autoGenUserExternalIdKey = "SHINARA_SDK_AUTO_GEN_EXTERNAL_USER_ID"
@@ -170,9 +171,16 @@ public actor ShinaraSDK {
             if let brandCodeData = validationResponse.brandCodeData {
                 // Store brand code data
                 UserDefaults.standard.set(brandCodeData.codeId, forKey: self.referralBrandCodeIdKey)
-                UserDefaults.standard.set(brandCodeData.isFree, forKey: self.referralBrandCodeIsFreeKey)
-                if let placementId = brandCodeData.placementId {
-                    UserDefaults.standard.set(placementId, forKey: self.referralBrandCodePlacementIdKey)
+                
+                if let isFree = validationResponse.isFree {
+                    UserDefaults.standard.set(isFree, forKey: self.referralCodeIsFreeKey)
+                } else {
+                    UserDefaults.standard.removeObject(forKey: self.referralCodeIsFreeKey)
+                }
+                if let placementId = validationResponse.placementId {
+                    UserDefaults.standard.set(placementId, forKey: self.referralCodePlacementIdKey)
+                } else {
+                    UserDefaults.standard.removeObject(forKey: self.referralCodePlacementIdKey)
                 }
                 // Clear affiliate code data
                 UserDefaults.standard.removeObject(forKey: self.referralCodeKey)
@@ -189,10 +197,18 @@ public actor ShinaraSDK {
                 if let codeId = validationResponse.codeId, !codeId.isEmpty {
                     UserDefaults.standard.set(codeId, forKey: self.referralCodeIdKey)
                 }
+                if let isFree = validationResponse.isFree {
+                    UserDefaults.standard.set(isFree, forKey: self.referralCodeIsFreeKey)
+                } else {
+                    UserDefaults.standard.removeObject(forKey: self.referralCodeIsFreeKey)
+                }
+                if let placementId = validationResponse.placementId {
+                    UserDefaults.standard.set(placementId, forKey: self.referralCodePlacementIdKey)
+                } else {
+                    UserDefaults.standard.removeObject(forKey: self.referralCodePlacementIdKey)
+                }
                 // Clear brand code data
                 UserDefaults.standard.removeObject(forKey: self.referralBrandCodeIdKey)
-                UserDefaults.standard.removeObject(forKey: self.referralBrandCodeIsFreeKey)
-                UserDefaults.standard.removeObject(forKey: self.referralBrandCodePlacementIdKey)
                 return validationResponse
             } else {
                 throw NSError(domain: "ShinaraSDK", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Referral code validation failed"])
@@ -248,12 +264,12 @@ public actor ShinaraSDK {
         UserDefaults.standard.string(forKey: referralBrandCodeIdKey)
     }
     
-    public func getBrandCodeIsFree() -> Bool {
-        UserDefaults.standard.bool(forKey: referralBrandCodeIsFreeKey)
+    public func getIsFree() -> Bool {
+        UserDefaults.standard.bool(forKey: referralCodeIsFreeKey)
     }
     
-    public func getBrandCodePlacementId() -> String? {
-        UserDefaults.standard.string(forKey: referralBrandCodePlacementIdKey)
+    public func getPlacementId() -> String? {
+        UserDefaults.standard.string(forKey: referralCodePlacementIdKey)
     }
     
     public func registerUser(userId: String, email: String?, name: String?, phone: String?) async throws {
